@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>River Attack</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#0b1d3a">
+<meta name="description" content="Voe pelo rio, destrua as pontes e não fique sem combustível. Consegue bater meu recorde?">
+<meta property="og:title" content="River Attack 🛩️">
+<meta property="og:description" content="Voe pelo rio, destrua as pontes e não fique sem combustível. Consegue bater meu recorde?">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:#050d1c;overflow:hidden;overscroll-behavior:none;color:#fff;
+  font-family:'Press Start 2P',ui-monospace,Menlo,Consolas,monospace;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+#wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+#stage{position:relative;overflow:hidden;font-size:8px}
+canvas{display:block;touch-action:none;background:#2563c9}
+.overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:1.6em;text-align:center;background:rgba(5,13,28,.80);padding:2em}
+.hidden{display:none!important}
+.title{display:flex;flex-direction:column;line-height:1.15;text-shadow:0 .25em 0 rgba(0,0,0,.45)}
+.t1{font-size:3.6em;color:#ffd23f}
+.t2{font-size:3.6em;color:#ff5d73}
+.go{font-size:2.4em;color:#ff5d73}
+.how{list-style:none;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-weight:700;
+  font-size:1.5em;line-height:1.35;text-align:left;display:flex;flex-direction:column;gap:.7em;color:#e8eefc}
+.how b{display:inline-block;width:1.8em;text-align:center;color:#ffd23f}
+.btn{font:inherit;font-size:1.5em;padding:1em 1.3em;border:0;border-radius:.4em;background:#ffd23f;color:#1a1a1a;
+  box-shadow:0 .3em 0 #b8860b;cursor:pointer;text-decoration:none;display:inline-block}
+.btn:active{transform:translateY(.2em);box-shadow:0 .1em 0 #b8860b}
+.btn.wa{background:#25d366;box-shadow:0 .3em 0 #128c4a;color:#06240f}
+.btn.wa:active{box-shadow:0 .1em 0 #128c4a}
+.best{font-size:1.3em;color:#9fb3d9}
+.score{font-size:1.9em;color:#fff}
+.small{font-family:system-ui,sans-serif;font-size:1.15em;color:#7f93bd}
+#mute{position:absolute;right:.6em;top:3.9em;font-size:2.2em;background:none;border:0;opacity:.85;cursor:pointer;line-height:1}
+#fire{position:absolute;right:1.4em;bottom:5em;width:8.4em;height:8.4em;border-radius:50%;border:.3em solid #fff;
+  background:rgba(230,57,70,.78);color:#fff;font-size:1em;cursor:pointer;touch-action:none;
+  box-shadow:0 .4em 0 rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:.2em}
+#fire span{font-size:2.8em;line-height:1}
+#fire small{font-family:inherit;font-size:1em}
+#fire:active{background:rgba(255,90,100,.95);transform:translateY(.2em)}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="stage">
+    <canvas id="c"></canvas>
+
+    <div id="menu" class="overlay">
+      <div class="title"><span class="t1">RIVER</span><span class="t2">ATTACK</span></div>
+      <ul class="how">
+        <li><b>↔</b>Arraste o dedo para pilotar</li>
+        <li><b>↕</b>Para cima acelera, para baixo freia</li>
+        <li><b>🔥</b>Segure o botão de fogo para atirar</li>
+        <li><b>⛽</b>Tanque: voe por cima para reabastecer ou explode ele (+80)</li>
+        <li><b>🌉</b>Destrua as pontes para avançar</li>
+      </ul>
+      <button id="play" class="btn">JOGAR</button>
+      <div class="best">RECORDE: <span id="bestMenu">0</span></div>
+      <div class="small">No computador: setas ou A / D, ↑ ↓ acelera e freia, Espaço atira</div>
+    </div>
+
+    <div id="over" class="overlay hidden">
+      <div class="title go">FIM DE JOGO</div>
+      <div class="score">PONTOS <span id="finalScore">0</span></div>
+      <div class="best" id="bestLine">RECORDE: 0</div>
+      <button id="again" class="btn">JOGAR DE NOVO</button>
+      <a id="share" class="btn wa" href="#" target="_blank" rel="noopener">DESAFIAR NO WHATSAPP</a>
+    </div>
+
+    <button id="fire" class="hidden" aria-label="Atirar"><span>🔥</span><small>FOGO</small></button>
+    <button id="mute" aria-label="Ligar ou desligar o som">🔊</button>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+/* ================= CONFIG ================= */
+// Link final do jogo (ex.: https://riverattack.vercel.app). Vazio = usa o endereço atual.
+const GAME_URL = '';
+
+const W = 360, H = 640;      // tamanho lógico da tela
+const RH = 8;                // altura de cada "fatia" do rio
+const PY = 500;              // posição vertical do avião na tela
+const SEC = 340;             // fatias por fase (termina numa ponte)
+
+/* ================= HELPERS ================= */
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const rand = (a, b) => a + Math.random() * (b - a);
+const irand = (a, b) => Math.floor(rand(a, b + 1));
+function hash(n) {
+  n = (n ^ 61) ^ (n >>> 16); n = n + (n << 3); n = n ^ (n >>> 4);
+  n = Math.imul(n, 0x27d4eb2d); n = n ^ (n >>> 15); return n >>> 0;
+}
+
+const canvas = $('c'), ctx = canvas.getContext('2d');
+const stage = $('stage'), menuEl = $('menu'), overEl = $('over'), muteBtn = $('mute'), shareEl = $('share');
+
+const C = {
+  water: '#2563c9', wave: 'rgba(255,255,255,.22)',
+  land: '#2f9e44', landDark: '#1b6b2d', tree: '#3dbb5a', sand: '#e9d37a'
+};
+
+/* ================= ESTADO ================= */
+let scale = 1, dpr = 1;
+let state = 'menu';              // menu | play | over
+let rows = [], rowBase = 0, gen;
+let objs = [], bullets = [], parts = [], bridges = [];
+let scroll = 0, speedMul = 1, speedTarget = 1, pointerSpeed = 1;
+let score = 0, lives = 3, level = 0, fuel = 100, nextLife = 3000;
+let invuln = 0, deathTimer = 0, fireCd = 0, time = 0, hintT = 0, lowFuelCd = 0, overAt = 0;
+let toast = null, diedByBridge = false;
+let best = 0;
+try { best = +localStorage.getItem('ra_best') || 0; } catch (e) {}
+const player = { x: W / 2, alive: true };
+const keys = {};
+
+/* ================= TELA ================= */
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 3);
+  scale = Math.min(window.innerWidth / W, window.innerHeight / H);
+  const cw = Math.floor(W * scale), ch = Math.floor(H * scale);
+  stage.style.width = cw + 'px';
+  stage.style.height = ch + 'px';
+  stage.style.fontSize = (scale * 8) + 'px';
+  canvas.style.width = cw + 'px';
+  canvas.style.height = ch + 'px';
+  canvas.width = Math.floor(cw * dpr);
+  canvas.height = Math.floor(ch * dpr);
+}
+
+/* ================= SOM ================= */
+let actx = null, muted = false;
+try { muted = localStorage.getItem('ra_muted') === '1'; } catch (e) {}
+muteBtn.textContent = muted ? '🔇' : '🔊';
+function initAudio() {
+  try {
+    if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') actx.resume();
+  } catch (e) { actx = null; }
+}
+function tone(f1, f2, dur, type, vol) {
+  if (muted || !actx) return;
+  try {
+    const t = actx.currentTime, o = actx.createOscillator(), g = actx.createGain();
+    o.type = type || 'square';
+    o.frequency.setValueAtTime(f1, t);
+    if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    g.gain.setValueAtTime(vol || .05, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g); g.connect(actx.destination);
+    o.start(t); o.stop(t + dur + .02);
+  } catch (e) {}
+}
+function noise(dur, vol) {
+  if (muted || !actx) return;
+  try {
+    const n = Math.floor(actx.sampleRate * dur), buf = actx.createBuffer(1, n, actx.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+    const s = actx.createBufferSource(), g = actx.createGain();
+    s.buffer = buf; g.gain.value = vol || .1;
+    s.connect(g); g.connect(actx.destination); s.start();
+  } catch (e) {}
+}
+
+/* ================= GERAÇÃO DO RIO ================= */
+function initWorld() {
+  rows = []; rowBase = 0; objs = []; bullets = []; parts = []; bridges = []; scroll = 0;
+  gen = { row: 0, cx: W / 2, hw: 100, tcx: W / 2, thw: 100, seg: 0,
+          island: 0, islandLen: 0, islandIw: 0, block: 0, lastIsland: -100,
+          nextFuel: 90, nextEnemy: 60, lastObj: 0 };
+  ensureRows();
+}
+
+function rowAt(i) {
+  let k = i - rowBase;
+  if (k < 0) k = 0;
+  if (k >= rows.length) k = rows.length - 1;
+  return rows[k];
+}
+
+function ensureRows() {
+  const need = Math.floor((scroll + PY) / RH) + 12;
+  while (gen.row <= need) genRow();
+}
+
+function genRow() {
+  const g = gen, i = g.row, sec = Math.floor(i / SEC), pos = i % SEC;
+  const minHW = Math.max(46, 80 - sec * 4), maxHW = Math.max(72, 112 - sec * 3);
+
+  if (i < 30) { g.tcx = W / 2; g.thw = 100; }
+  else {
+    if (g.seg <= 0) {
+      g.seg = irand(12, 34);
+      g.thw = rand(minHW, maxHW);
+      g.tcx = rand(g.thw + 14, W - g.thw - 14);
+    }
+    g.seg--;
+    if (pos >= SEC - 45 && pos <= SEC - 2) { g.thw = maxHW; g.tcx = W / 2; }  // trecho reto e largo antes da ponte
+  }
+  g.cx += clamp(g.tcx - g.cx, -2.4, 2.4);
+  g.hw += clamp(g.thw - g.hw, -1, 1);
+  g.cx = clamp(g.cx, g.hw + 14, W - g.hw - 14);
+
+  const row = { l: g.cx - g.hw, r: g.cx + g.hw, il: -1, ir: -1 };
+
+  // ilhas
+  const nearBridge = pos > SEC - 60 || pos < 8;
+  if (g.island > 0) {
+    g.island--;
+    const k = 1 - g.island / g.islandLen;
+    const taper = Math.pow(Math.sin(Math.PI * k), 0.6);
+    const iw = Math.min(g.islandIw * taper, g.hw - 48);
+    if (iw >= 5) { row.il = g.cx - iw; row.ir = g.cx + iw; }
+  } else if (!nearBridge && g.hw >= 84 && i > 40 && i - g.lastIsland > 50 && Math.random() < 0.015) {
+    g.islandLen = irand(16, 34); g.island = g.islandLen; g.islandIw = rand(12, 30);
+    g.block = g.islandLen + 6; g.lastIsland = i + g.islandLen;
+  }
+
+  // ponte no fim de cada fase
+  if (pos === SEC - 4) bridges.push({ y0: i * RH, y1: (i + 3) * RH, alive: true });
+
+  // objetos
+  const ok = g.block <= 0 && row.il < 0 && i >= 50 && pos >= 8 && pos < SEC - 50 && i - g.lastObj >= 7;
+  const wy = i * RH + RH / 2;
+  if (ok && i >= g.nextFuel) {
+    objs.push({ t: 'fuel', x: g.cx + rand(-1, 1) * (g.hw - 30), y: wy, w: 26, h: 30, alive: true });
+    g.nextFuel = i + irand(120, 180); g.lastObj = i;
+  } else if (ok && i >= g.nextEnemy) {
+    spawnEnemy(g, wy, sec);
+    g.nextEnemy = i + irand(Math.max(9, 22 - sec * 2), Math.max(16, 36 - sec * 3)); g.lastObj = i;
+  }
+  if (g.block > 0) g.block--;
+
+  rows.push(row); g.row++;
+}
+
+function spawnEnemy(g, wy, sec) {
+  const tot = 7 + (sec >= 2 ? 2 : 0), p = Math.random() * tot;
+  const dir = Math.random() < .5 ? -1 : 1;
+  const x = g.cx + rand(-1, 1) * (g.hw - 34);
+  if (p < 4)      objs.push({ t: 'ship', x, y: wy, w: 36, h: 16, dir, vx: 18 + sec * 3, alive: true });
+  else if (p < 7) objs.push({ t: 'heli', x, y: wy, w: 28, h: 18, dir, vx: 40 + sec * 4, alive: true });
+  else            objs.push({ t: 'jet', x: dir > 0 ? -40 : W + 40, y: wy, w: 32, h: 14, dir, vx: 210, alive: true, launched: false });
+}
+
+function trim() {
+  if (Math.floor((scroll - 300) / RH) - rowBase > 150) { rows.splice(0, 100); rowBase += 100; }
+  if (bridges.length > 3 && bridges[0].y1 < scroll - 500) bridges.shift();
+}
+
+/* ================= EFEITOS ================= */
+function boom(x, y, n, colors) {
+  for (let k = 0; k < n; k++) {
+    const a = Math.random() * Math.PI * 2, s = rand(30, 170);
+    parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: rand(.3, .8), max: .8,
+                 color: colors[irand(0, colors.length - 1)], size: rand(2, 5) });
+  }
+}
+const FIRE = ['#ffd23f', '#ff7b00', '#fff', '#e63946'];
+
+function addScore(n) {
+  score += n;
+  if (score >= nextLife) {
+    lives = Math.min(5, lives + 1); nextLife += 3000;
+    toast = { text: 'VIDA EXTRA!', t: 1.8 };
+    tone(500, 1500, .35, 'square', .05);
+  }
+}
+
+/* ================= JOGO ================= */
+function startGame() {
+  initAudio();
+  initWorld();
+  score = 0; lives = 3; level = 0; fuel = 100; nextLife = 3000;
+  player.x = W / 2; player.alive = true; invuln = 1.5;
+  speedMul = 1; pointerSpeed = 1; fireCd = .3; hintT = 0; toast = null; ptr = null;
+  firePtrs.clear(); fireBtnHeld = false;
+  state = 'play';
+  menuEl.classList.add('hidden'); overEl.classList.add('hidden'); fireBtn.classList.remove('hidden');
+}
+
+function gameOver() {
+  state = 'over'; overAt = performance.now(); ptr = null; pointerSpeed = 1;
+  firePtrs.clear(); fireBtnHeld = false; fireBtn.classList.add('hidden');
+  let isNew = false;
+  if (score > best) { best = score; isNew = true; try { localStorage.setItem('ra_best', String(best)); } catch (e) {} }
+  $('finalScore').textContent = score;
+  $('bestLine').textContent = isNew ? 'NOVO RECORDE!' : 'RECORDE: ' + best;
+  const base = GAME_URL || String(window.location.href).split('#')[0];
+  const msg = 'Fiz ' + score + ' pontos no RIVER ATTACK! 🛩️ Consegue me superar?\n' + base;
+  shareEl.href = 'https://wa.me/?text=' + encodeURIComponent(msg);
+  overEl.classList.remove('hidden');
+}
+
+function crash(why, force) {
+  if (!player.alive || (invuln > 0 && !force)) return;
+  player.alive = false; lives--; diedByBridge = (why === 'bridge');
+  boom(player.x, scroll, 30, FIRE);
+  noise(.6, .2); tone(400, 40, .6, 'sawtooth', .06);
+  deathTimer = 1.4; bullets.length = 0;
+}
+
+function respawn() {
+  if (diedByBridge) scroll = Math.max(0, scroll - 170);
+  const r = rowAt(Math.floor(scroll / RH));
+  player.x = r.il >= 0 ? (r.l + r.il) / 2 : (r.l + r.r) / 2;
+  player.alive = true; invuln = 2.4; fuel = 100; speedMul = 1; fireCd = .3;
+  for (const o of objs) if (o.t !== 'fuel' && Math.abs(o.y - scroll) < 220) o.alive = false;
+  objs = objs.filter(o => o.alive);
+}
+
+function destroyBridge(br) {
+  br.alive = false; level++; addScore(500);
+  toast = { text: 'PONTE DESTRUÍDA! +500', t: 2 };
+  const r = rowAt(Math.floor(br.y0 / RH)), by = (br.y0 + br.y1) / 2;
+  for (let k = 0; k < 7; k++) boom(rand(r.l - 20, r.r + 20), by, 10, FIRE);
+  noise(.6, .22); tone(220, 40, .6, 'sawtooth', .07);
+}
+
+function killEnemy(o) {
+  o.alive = false;
+  addScore(o.t === 'ship' ? 30 : o.t === 'heli' ? 60 : o.t === 'fuel' ? 80 : 100);
+  boom(o.x, o.y, o.t === 'fuel' ? 18 : 14, FIRE);
+  noise(.2, .12); tone(300, 80, .15, 'sawtooth', .04);
+}
+
+function updateWorld(dt, spd) {
+  scroll += spd * dt;
+  ensureRows();
+  for (const o of objs) {
+    if (!o.alive) continue;
+    if (o.t === 'ship' || o.t === 'heli') {
+      o.x += o.dir * o.vx * dt;
+      const r = rowAt(Math.floor(o.y / RH)), mn = r.l + 5 + o.w / 2, mx = r.r - 5 - o.w / 2;
+      if (o.x < mn) { o.x = mn; o.dir = 1; } else if (o.x > mx) { o.x = mx; o.dir = -1; }
+    } else if (o.t === 'jet') {
+      if (!o.launched) { if (PY - (o.y - scroll) >= 24) o.launched = true; }
+      else { o.x += o.dir * o.vx * dt; if (o.x < -60 || o.x > W + 60) o.alive = false; }
+    }
+  }
+  objs = objs.filter(o => o.alive && o.y > scroll - 300);
+  for (const p of parts) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy -= 60 * dt; p.life -= dt; }
+  parts = parts.filter(p => p.life > 0);
+  trim();
+}
+
+function updateBullets(dt) {
+  for (const b of bullets) {
+    b.y += 520 * dt;
+    if (b.y > scroll + PY + 10) { b.dead = true; continue; }
+    for (const br of bridges) {
+      if (br.alive && b.y >= br.y0 - 4 && b.y <= br.y1 + 4) { destroyBridge(br); b.dead = true; break; }
+    }
+    if (b.dead) continue;
+    const r = rowAt(Math.floor(b.y / RH));
+    if (b.x < r.l || b.x > r.r || (r.il >= 0 && b.x > r.il && b.x < r.ir)) {
+      b.dead = true; boom(b.x, b.y, 3, ['#fff7b0', '#e9d37a']); continue;
+    }
+    for (const o of objs) {
+      if (!o.alive) continue;
+      if (Math.abs(b.x - o.x) < o.w / 2 + 2 && Math.abs(b.y - o.y) < o.h / 2 + 6) { killEnemy(o); b.dead = true; break; }
+    }
+  }
+  bullets = bullets.filter(b => !b.dead);
+}
+
+function checkCollisions() {
+  const px = player.x, py = scroll, hw = 7, hh = 10;
+  for (const o of objs) {
+    if (!o.alive) continue;
+    if (Math.abs(px - o.x) < o.w / 2 + hw && Math.abs(py - o.y) < o.h / 2 + hh) {
+      if (o.t === 'fuel') {
+        o.alive = false; fuel = Math.min(100, fuel + 60); addScore(20);
+        tone(600, 1200, .14, 'square', .05);
+      } else if (invuln <= 0) {
+        o.alive = false; boom(o.x, o.y, 12, FIRE); crash('enemy'); return;
+      }
+    }
+  }
+  if (invuln > 0) return;
+  for (let i = Math.floor((py - hh) / RH); i <= Math.floor((py + hh) / RH); i++) {
+    const r = rowAt(i);
+    if (px - hw < r.l + 1 || px + hw > r.r - 1 || (r.il >= 0 && px + hw > r.il && px - hw < r.ir)) { crash('bank'); return; }
+  }
+  for (const br of bridges) {
+    if (br.alive && py + hh > br.y0 && py - hh < br.y1) { crash('bridge'); return; }
+  }
+}
+
+function update(dt) {
+  if (hintT < 6) hintT += dt;
+  if (toast) { toast.t -= dt; if (toast.t <= 0) toast = null; }
+
+  const up = keys.ArrowUp || keys.KeyW, dn = keys.ArrowDown || keys.KeyS;
+  speedTarget = up ? 1.35 : dn ? 0.75 : pointerSpeed;
+  speedMul += (speedTarget - speedMul) * Math.min(1, dt * 6);
+  const spd = Math.min(95 + level * 9, 170) * speedMul;
+
+  if (player.alive) {
+    if (keys.ArrowLeft || keys.KeyA) player.x -= 210 * dt;
+    if (keys.ArrowRight || keys.KeyD) player.x += 210 * dt;
+    player.x = clamp(player.x, 12, W - 12);
+
+    updateWorld(dt, spd);
+    if (invuln > 0) invuln -= dt;
+
+    fireCd -= dt;
+    if (firing() && fireCd <= 0) { fireCd = .22; bullets.push({ x: player.x, y: scroll + 16 }); tone(900, 500, .06, 'square', .02); }
+
+    fuel -= (3.4 + Math.min(level * .15, 1.5)) * dt;
+    if (fuel < 25) {
+      lowFuelCd -= dt;
+      if (lowFuelCd <= 0) { lowFuelCd = .6; tone(220, 220, .09, 'square', .04); }
+    }
+    if (fuel <= 0) { fuel = 0; crash('fuel', true); }
+
+    updateBullets(dt);
+    if (player.alive) checkCollisions();
+  } else {
+    updateWorld(dt, 0);
+    deathTimer -= dt;
+    if (deathTimer <= 0) { if (lives > 0) respawn(); else gameOver(); }
+  }
+}
+
+/* ================= DESENHO ================= */
+function drawJet(x, y, s) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+  ctx.fillStyle = ((time * 20) | 0) % 2 ? '#ff9f1c' : '#ffd166';
+  ctx.fillRect(-2, 12, 4, 4 + ((time * 30) | 0) % 3);
+  ctx.fillStyle = '#f4a300';
+  ctx.beginPath(); ctx.moveTo(-3, -2); ctx.lineTo(-14, 9); ctx.lineTo(-14, 12); ctx.lineTo(-3, 7); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(3, -2); ctx.lineTo(14, 9); ctx.lineTo(14, 12); ctx.lineTo(3, 7); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-3, 8); ctx.lineTo(-8, 14); ctx.lineTo(-3, 13); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(3, 8); ctx.lineTo(8, 14); ctx.lineTo(3, 13); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#ffd23f';
+  ctx.beginPath(); ctx.moveTo(0, -14); ctx.lineTo(4, -6); ctx.lineTo(4, 12); ctx.lineTo(-4, 12); ctx.lineTo(-4, -6); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#1d3557'; ctx.fillRect(-1.5, -8, 3, 6);
+  ctx.restore();
+}
+
+function drawShip(o, sy) {
+  ctx.save(); ctx.translate(o.x, sy);
+  ctx.fillStyle = 'rgba(255,255,255,.4)'; ctx.fillRect(-o.dir * 24, 5, 7, 2);
+  ctx.fillStyle = '#495057';
+  ctx.beginPath(); ctx.moveTo(-18, -1); ctx.lineTo(18, -1); ctx.lineTo(13, 8); ctx.lineTo(-13, 8); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#ced4da'; ctx.fillRect(-9, -6, 18, 5);
+  ctx.fillStyle = '#e63946'; ctx.fillRect(-4, -10, 8, 5);
+  ctx.restore();
+}
+
+function drawHeli(o, sy) {
+  ctx.save(); ctx.translate(o.x, sy);
+  ctx.fillStyle = '#d62828';
+  ctx.beginPath(); ctx.ellipse(0, 0, 10, 6, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillRect(o.dir > 0 ? -19 : 9, -1, 10, 3);
+  ctx.fillRect(o.dir > 0 ? -19 : 17, -5, 2, 5);
+  ctx.fillStyle = '#a8dadc'; ctx.beginPath(); ctx.ellipse(o.dir * 4, -1, 4, 3, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#f1faee'; const rw = 28 * Math.abs(Math.cos(time * 25));
+  ctx.fillRect(-rw / 2, -9, rw, 2); ctx.fillRect(-1, -8, 2, 3);
+  ctx.restore();
+}
+
+function drawEnemyJet(o, sy) {
+  ctx.save(); ctx.translate(o.x, sy);
+  const d = o.dir;
+  ctx.fillStyle = '#ff4d8d';
+  ctx.beginPath(); ctx.moveTo(d * 16, 0); ctx.lineTo(-d * 12, -8); ctx.lineTo(-d * 7, 0); ctx.lineTo(-d * 12, 8); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#7209b7'; ctx.fillRect(-d * 5 - 3, -1.5, 8, 3);
+  ctx.restore();
+}
+
+function drawFuel(o, sy) {
+  ctx.save(); ctx.translate(o.x, sy);
+  ctx.fillStyle = '#d62828'; ctx.fillRect(-13, -15, 26, 30);
+  ctx.fillStyle = '#fff'; ctx.fillRect(-13, -5, 26, 10);
+  ctx.fillStyle = '#d62828'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'; ctx.fillText('FUEL', 0, 3);
+  ctx.strokeStyle = ((time * 4) | 0) % 2 ? '#ffd23f' : '#7a0f17'; ctx.lineWidth = 2; ctx.strokeRect(-14, -16, 28, 32);
+  ctx.restore();
+}
+
+function drawBridge(br) {
+  const top = PY - (br.y1 - scroll), h = br.y1 - br.y0;
+  if (top > H || top + h < 0) return;
+  const r = rowAt(Math.floor(br.y0 / RH));
+  if (br.alive) {
+    ctx.fillStyle = '#9aa0a6'; ctx.fillRect(0, top, W, h);
+    ctx.fillStyle = '#5f6368'; ctx.fillRect(0, top, W, 3); ctx.fillRect(0, top + h - 3, W, 3);
+    ctx.fillStyle = '#ffd23f'; for (let x = 4; x < W; x += 24) ctx.fillRect(x, top + h / 2 - 1, 12, 2);
+  } else {
+    ctx.fillStyle = '#9aa0a6'; ctx.fillRect(0, top, r.l - 2, h); ctx.fillRect(r.r + 2, top, W - r.r - 2, h);
+    ctx.fillStyle = '#5f6368'; ctx.fillRect(0, top, r.l - 2, 3); ctx.fillRect(r.r + 2, top, W - r.r - 2, 3);
+    ctx.fillRect(0, top + h - 3, r.l - 2, 3); ctx.fillRect(r.r + 2, top + h - 3, W - r.r - 2, 3);
+  }
+}
+
+function render() {
+  ctx.setTransform(canvas.width / W, 0, 0, canvas.height / H, 0, 0);
+  ctx.fillStyle = C.water; ctx.fillRect(0, 0, W, H);
+
+  const iTop = Math.floor((scroll + PY) / RH) + 1, iBot = Math.floor((scroll - (H - PY)) / RH) - 1;
+  for (let i = iBot; i <= iTop; i++) {
+    const r = rowAt(i < 0 ? 0 : i);
+    const sy = Math.floor(PY - ((i + 1) * RH - scroll)), hh = RH + 1, h = hash(i + 5000);
+    // margens
+    ctx.fillStyle = C.land;
+    ctx.fillRect(0, sy, r.l - 3, hh); ctx.fillRect(r.r + 3, sy, W - r.r - 3, hh);
+    ctx.fillStyle = C.sand;
+    ctx.fillRect(r.l - 3, sy, 3, hh); ctx.fillRect(r.r, sy, 3, hh);
+    // ilha
+    if (r.il >= 0) {
+      ctx.fillStyle = C.sand; ctx.fillRect(r.il - 3, sy, r.ir - r.il + 6, hh);
+      ctx.fillStyle = C.land; ctx.fillRect(r.il, sy, r.ir - r.il, hh);
+    }
+    // árvores
+    if (h % 6 === 0 && r.l > 30) {
+      const x = 4 + ((h >> 4) % Math.max(1, Math.floor(r.l - 20)));
+      ctx.fillStyle = C.landDark; ctx.fillRect(x, sy + 1, 7, 7); ctx.fillStyle = C.tree; ctx.fillRect(x + 1, sy + 1, 4, 4);
+    }
+    if ((h >> 8) % 6 === 0 && W - r.r > 30) {
+      const x = r.r + 10 + ((h >> 12) % Math.max(1, Math.floor(W - r.r - 20)));
+      ctx.fillStyle = C.landDark; ctx.fillRect(x, sy + 1, 7, 7); ctx.fillStyle = C.tree; ctx.fillRect(x + 1, sy + 1, 4, 4);
+    }
+    // ondas
+    if (h % 5 === 0 && r.il < 0) {
+      const x = r.l + 8 + ((h >> 6) % Math.max(1, Math.floor(r.r - r.l - 30)));
+      ctx.fillStyle = C.wave; ctx.fillRect(x, sy + 3, 10, 2);
+    }
+  }
+
+  for (const br of bridges) drawBridge(br);
+
+  for (const o of objs) {
+    if (!o.alive) continue;
+    const sy = PY - (o.y - scroll);
+    if (o.t === 'jet' && !o.launched) {
+      if (sy > -150 && ((time * 6) | 0) % 2 === 0) {          // aviso: jato vindo
+        const ax = o.dir > 0 ? 14 : W - 14;
+        ctx.fillStyle = '#ff3b30'; ctx.beginPath(); ctx.moveTo(ax, 38); ctx.lineTo(ax - 9, 56); ctx.lineTo(ax + 9, 56); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.fillRect(ax - 1, 43, 2, 7); ctx.fillRect(ax - 1, 52, 2, 2);
+      }
+      continue;
+    }
+    if (sy < -40 || sy > H + 40) continue;
+    if (o.t === 'ship') drawShip(o, sy);
+    else if (o.t === 'heli') drawHeli(o, sy);
+    else if (o.t === 'jet') drawEnemyJet(o, sy);
+    else drawFuel(o, sy);
+  }
+
+  ctx.fillStyle = '#fff7b0';
+  for (const b of bullets) ctx.fillRect(b.x - 1.5, PY - (b.y - scroll) - 5, 3, 10);
+
+  if (state === 'play' && player.alive && !(invuln > 0 && ((time * 12) | 0) % 2 === 0)) drawJet(player.x, PY, 1);
+
+  for (const p of parts) {
+    ctx.globalAlpha = clamp(p.life / p.max, 0, 1);
+    ctx.fillStyle = p.color; ctx.fillRect(p.x - p.size / 2, PY - (p.y - scroll) - p.size / 2, p.size, p.size);
+  }
+  ctx.globalAlpha = 1;
+
+  if (state === 'play') drawHUD();
+}
+
+function drawHUD() {
+  ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.fillRect(0, 0, W, 28);
+  ctx.font = '9px "Press Start 2P", monospace'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.fillText(String(score).padStart(6, '0'), 8, 19);
+  ctx.textAlign = 'center'; ctx.fillStyle = '#ffd23f'; ctx.fillText('FASE ' + (level + 1), W / 2, 19);
+  for (let k = 0; k < lives; k++) drawJet(W - 14 - k * 18, 14, .5);
+
+  ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillRect(0, H - 34, W, 34);
+  ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; ctx.fillText('COMB.', 8, H - 13);
+  const pct = clamp(fuel / 100, 0, 1), blink = ((time * 5) | 0) % 2;
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(56.5, H - 26.5, 190, 14);
+  ctx.fillStyle = pct > .5 ? '#4ade80' : pct > .25 ? '#facc15' : (blink ? '#ef4444' : '#7f1d1d');
+  ctx.fillRect(58, H - 25, 187 * pct, 12);
+  ctx.fillStyle = '#fff'; ctx.fillText('F', 252, H - 13);
+
+  if (hintT < 5 && state === 'play') {
+    ctx.globalAlpha = clamp(5 - hintT, 0, 1); ctx.textAlign = 'center'; ctx.fillStyle = '#fff';
+    ctx.fillText('ARRASTE: PILOTAR', W / 2, H - 120);
+    ctx.fillText('SEGURE O BOTAO: ATIRAR', W / 2, H - 100);
+    ctx.globalAlpha = 1;
+  }
+  for (const br of bridges) {                                  // aviso: ponte à frente
+    const sy = PY - (br.y1 - scroll);
+    if (br.alive && sy > 30 && sy < 260 && ((time * 3) | 0) % 2 === 0) {
+      ctx.textAlign = 'center'; ctx.fillStyle = '#ff5d73'; ctx.fillText('ATIRE NA PONTE!', W / 2, 52); break;
+    }
+  }
+  if (toast) {
+    ctx.globalAlpha = clamp(toast.t, 0, 1); ctx.textAlign = 'center'; ctx.fillStyle = '#ffd23f';
+    ctx.fillText(toast.text, W / 2, 62); ctx.globalAlpha = 1;
+  }
+}
+
+/* ================= ENTRADA ================= */
+// Tiro manual (como no River Raid original): botão na tela, segundo dedo ou Espaço.
+// Assim dá para escolher: explodir o tanque (+80) ou passar por cima para reabastecer.
+let ptr = null, fireBtnHeld = false;
+const firePtrs = new Set();
+const fireBtn = $('fire');
+const firing = () => !!keys.Space || fireBtnHeld || firePtrs.size > 0;
+
+canvas.addEventListener('pointerdown', e => {
+  initAudio();
+  if (state !== 'play') return;
+  try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+  if (!ptr) ptr = { id: e.pointerId, lx: e.clientX, sy: e.clientY };
+  else firePtrs.add(e.pointerId);                       // segundo dedo = atirar
+});
+
+fireBtn.addEventListener('pointerdown', e => {
+  e.preventDefault(); initAudio(); fireBtnHeld = true;
+  try { fireBtn.setPointerCapture(e.pointerId); } catch (err) {}
+});
+const endFire = () => { fireBtnHeld = false; };
+fireBtn.addEventListener('pointerup', endFire);
+fireBtn.addEventListener('pointercancel', endFire);
+fireBtn.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('pointermove', e => {
+  if (!ptr || e.pointerId !== ptr.id || state !== 'play') return;
+  const dx = (e.clientX - ptr.lx) / scale;
+  player.x = clamp(player.x + dx * 1.25, 12, W - 12);
+  ptr.lx = e.clientX;
+  pointerSpeed = clamp(1 - (e.clientY - ptr.sy) / scale * 0.006, .75, 1.35);
+});
+const endPtr = e => {
+  if (ptr && e.pointerId === ptr.id) { ptr = null; pointerSpeed = 1; }
+  else firePtrs.delete(e.pointerId);
+};
+canvas.addEventListener('pointerup', endPtr);
+canvas.addEventListener('pointercancel', endPtr);
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+window.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].indexOf(e.code) >= 0) e.preventDefault();
+  initAudio();
+  if ((e.code === 'Enter' || e.code === 'Space') && (state === 'menu' || (state === 'over' && performance.now() - overAt > 600))) startGame();
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+
+$('play').addEventListener('click', startGame);
+$('again').addEventListener('click', startGame);
+muteBtn.addEventListener('click', () => {
+  initAudio(); muted = !muted;
+  muteBtn.textContent = muted ? '🔇' : '🔊';
+  try { localStorage.setItem('ra_muted', muted ? '1' : '0'); } catch (e) {}
+});
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', resize);
+
+/* ================= LOOP ================= */
+let last = 0;
+function frame(t) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, Math.max(0, (t - last) / 1000) || 0);
+  last = t; time += dt;
+  if (state === 'play') update(dt);
+  else { updateWorld(dt, 55); }
+  render();
+}
+
+$('bestMenu').textContent = best;
+resize();
+initWorld();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
