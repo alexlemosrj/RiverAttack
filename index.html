@@ -49,7 +49,11 @@ canvas#c{display:block;touch-action:none;background:#2563c9}
 .score{font-size:1.9em;color:#fff;text-shadow:0 .12em 0 rgba(0,0,0,.6)}
 .small{font-family:system-ui,sans-serif;font-size:1.1em;color:#7f93bd}
 #mute{position:absolute;right:.6em;top:4.9em;font-size:2.1em;background:none;border:0;opacity:.85;cursor:pointer;line-height:1}
-#fire{position:absolute;left:1.4em;bottom:5.6em;width:8.4em;height:8.4em;border-radius:50%;border:.3em solid rgba(255,255,255,.95);
+#fireWrap{position:absolute;left:1.4em;top:66em;width:8.4em;height:8.4em}
+#fireMove{position:absolute;right:-1.1em;top:-1.1em;width:3.4em;height:3.4em;border-radius:50%;border:.2em solid rgba(255,255,255,.9);
+  background:rgba(10,26,60,.8);color:#fff;font-size:1em;line-height:1;cursor:grab;touch-action:none;display:flex;align-items:center;justify-content:center;padding:0}
+#fireMove span{font-size:2em;line-height:1}
+#fire{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;border:.3em solid rgba(255,255,255,.95);
   background:radial-gradient(circle at 35% 30%,#ff8a8a,#e5383b 55%,#a4161a);color:#fff;font-size:1em;cursor:pointer;touch-action:none;
   box-shadow:0 .4em 0 rgba(0,0,0,.35),0 0 1.4em rgba(255,70,70,.45);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:.2em}
 #over{gap:1em}
@@ -89,7 +93,7 @@ canvas#c{display:block;touch-action:none;background:#2563c9}
       <ul class="how">
         <li><b>↔</b>Arraste o dedo para pilotar</li>
         <li><b>↕</b>Para cima acelera, para baixo freia</li>
-        <li><b>🔥</b>Segure o botão de fogo para atirar</li>
+        <li><b>🔥</b>Segure o botão de fogo para atirar. Arraste o ✥ para mudar de lugar</li>
         <li><b>⛽</b>Tanque: passe por cima para reabastecer ou explode ele (+80)</li>
         <li><b>🌉</b>Destrua as pontes para avançar</li>
       </ul>
@@ -115,7 +119,10 @@ canvas#c{display:block;touch-action:none;background:#2563c9}
       <a id="share" class="btn wa" href="#" target="_blank" rel="noopener">DESAFIAR NO WHATSAPP</a>
     </div>
 
-    <button id="fire" class="hidden" aria-label="Atirar"><span>🔥</span><small>FOGO</small></button>
+    <div id="fireWrap" class="hidden">
+      <button id="fire" aria-label="Atirar"><span>🔥</span><small>FOGO</small></button>
+      <button id="fireMove" aria-label="Mover o botão de fogo"><span>✥</span></button>
+    </div>
     <button id="mute" aria-label="Ligar ou desligar o som">🔊</button>
   </div>
 </div>
@@ -151,6 +158,7 @@ function mulberry(a) {
 }
 
 const canvas = $('c'), ctx = canvas.getContext('2d');
+const fireWrap = $('fireWrap');
 const stage = $('stage'), menuEl = $('menu'), overEl = $('over'), muteBtn = $('mute'), shareEl = $('share');
 
 /* ================= TEMAS (uma paleta por fase) ================= */
@@ -555,12 +563,12 @@ function startGame() {
   banner = { text: 'FASE 1', sub: THEMES[0].name, t: 2.6, max: 2.6 };
   firePtrs.clear(); fireBtnHeld = false;
   state = 'play';
-  menuEl.classList.add('hidden'); overEl.classList.add('hidden'); fireBtn.classList.remove('hidden');
+  menuEl.classList.add('hidden'); overEl.classList.add('hidden'); fireWrap.classList.remove('hidden');
 }
 
 function gameOver() {
   state = 'over'; overAt = performance.now(); ptr = null; pointerSpeed = 1;
-  firePtrs.clear(); fireBtnHeld = false; fireBtn.classList.add('hidden');
+  firePtrs.clear(); fireBtnHeld = false; fireWrap.classList.add('hidden');
   let isNew = false;
   if (score > best) { best = score; isNew = true; try { localStorage.setItem('ra_best', String(best)); } catch (e) {} }
   $('finalScore').textContent = score;
@@ -1131,6 +1139,44 @@ function render() {
 let ptr = null, fireBtnHeld = false;
 const firePtrs = new Set();
 const fireBtn = $('fire');
+
+// Botão de fogo flutuante: arraste a alça ✥ para colocar onde ficar melhor para a sua mão.
+// Posição guardada em frações da tela (centro do botão), então vale em qualquer tamanho de celular.
+const fireMove = $('fireMove');
+const FW = W / 8, FH = H / 8, FSZ = 8.4;                 // tela em "em" (stage tem font-size = escala*8px)
+let firePos = { x: (1.4 + FSZ / 2) / FW, y: 70.2 / FH };
+try { const sv = JSON.parse(localStorage.getItem('ra_fire') || 'null');
+  if (sv && isFinite(sv.x) && isFinite(sv.y)) firePos = { x: sv.x, y: sv.y }; } catch (e) {}
+function placeFire() {
+  const hx = FSZ / 2 + 1.2, minY = 13 + FSZ / 2;
+  firePos.x = clamp(firePos.x, hx / FW, 1 - hx / FW);
+  firePos.y = clamp(firePos.y, minY / FH, 70.2 / FH);
+  fireWrap.style.left = (firePos.x * FW - FSZ / 2) + 'em';
+  fireWrap.style.top = (firePos.y * FH - FSZ / 2) + 'em';
+}
+let moveId = null, moveDx = 0, moveDy = 0;
+fireMove.addEventListener('pointerdown', e => {
+  e.preventDefault(); e.stopPropagation(); moveId = e.pointerId;
+  try { fireMove.setPointerCapture(e.pointerId); } catch (err) {}
+  const r = stage.getBoundingClientRect();
+  moveDx = e.clientX - (r.left + firePos.x * r.width);
+  moveDy = e.clientY - (r.top + firePos.y * r.height);
+});
+fireMove.addEventListener('pointermove', e => {
+  if (e.pointerId !== moveId) return;
+  const r = stage.getBoundingClientRect();
+  firePos.x = (e.clientX - moveDx - r.left) / r.width;
+  firePos.y = (e.clientY - moveDy - r.top) / r.height;
+  placeFire();
+});
+const endMove = e => {
+  if (e.pointerId !== moveId) return;
+  moveId = null; try { localStorage.setItem('ra_fire', JSON.stringify(firePos)); } catch (err) {}
+};
+fireMove.addEventListener('pointerup', endMove);
+fireMove.addEventListener('pointercancel', endMove);
+fireMove.addEventListener('contextmenu', e => e.preventDefault());
+placeFire();
 const firing = () => !!keys.Space || fireBtnHeld || firePtrs.size > 0;
 
 canvas.addEventListener('pointerdown', e => {
