@@ -9,6 +9,7 @@ Jogo de avião pelo rio, inspirado nos clássicos de rolagem vertical. Um único
 - **Combustível:** voe por cima dos tanques para reabastecer, ou explode eles com um tiro (+80 pontos). Ficou sem combustível, perdeu uma vida.
 - **Pontes:** destrua a ponte no fim de cada fase (+500). Bater nela é fatal.
 - Vida extra a cada 3000 pontos.
+- Cada ponte destruída muda o cenário: dia claro, entardecer, noite, pântano, deserto e gelo.
 
 ## Publicar na Vercel
 
