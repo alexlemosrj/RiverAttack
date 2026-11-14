@@ -52,6 +52,24 @@ canvas#c{display:block;touch-action:none;background:#2563c9}
 #fire{position:absolute;right:1.4em;bottom:5.6em;width:8.4em;height:8.4em;border-radius:50%;border:.3em solid rgba(255,255,255,.95);
   background:radial-gradient(circle at 35% 30%,#ff8a8a,#e5383b 55%,#a4161a);color:#fff;font-size:1em;cursor:pointer;touch-action:none;
   box-shadow:0 .4em 0 rgba(0,0,0,.35),0 0 1.4em rgba(255,70,70,.45);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:.2em}
+#over{gap:1em}
+#rankBox{display:flex;flex-direction:column;align-items:center;gap:.7em;width:100%}
+.rkTitle{font-size:1.3em;color:#ffd23f}
+#saveRow{display:flex;gap:.6em;align-items:stretch}
+#nameIn{font:700 16px system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;width:11em;padding:.55em .7em;border-radius:.5em;
+  border:3px solid #5b7fc7;background:rgba(5,13,28,.9);color:#fff;text-transform:uppercase;text-align:center;
+  -webkit-user-select:text;user-select:text;outline:none}
+#nameIn:focus{border-color:#ffd23f}
+.btn.sm{font-size:1.15em;padding:.6em .9em}
+.btn:disabled{opacity:.6;cursor:default}
+#rankMsg{min-height:1.3em}
+#board{list-style:none;width:22em;max-width:100%;display:flex;flex-direction:column;gap:.22em;
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-weight:700;font-size:1.2em}
+#board li{display:flex;gap:.6em;padding:.22em .7em;border-radius:.5em;background:rgba(255,255,255,.07);color:#e8eefc;text-align:left}
+#board li.me{background:rgba(255,210,63,.24);color:#ffe36e}
+#board .pos{width:1.7em;color:#ffd23f}
+#board .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#board .pt{font-variant-numeric:tabular-nums}
 #fire span{font-size:2.8em;line-height:1}
 #fire small{font-family:inherit;font-size:1em;text-shadow:0 .1em 0 rgba(0,0,0,.5)}
 #fire:active{filter:brightness(1.2);transform:translateY(.2em)}
@@ -84,6 +102,15 @@ canvas#c{display:block;touch-action:none;background:#2563c9}
       <div class="title go">FIM DE JOGO</div>
       <div class="score">PONTOS <span id="finalScore">0</span></div>
       <div class="best" id="bestLine">RECORDE: 0</div>
+      <div id="rankBox" class="hidden">
+        <div class="rkTitle">TOP 10</div>
+        <div id="saveRow">
+          <input id="nameIn" maxlength="12" placeholder="SEU NOME" autocomplete="off" autocapitalize="characters" spellcheck="false">
+          <button id="saveBtn" class="btn sm">SALVAR</button>
+        </div>
+        <div id="rankMsg" class="small"></div>
+        <ol id="board"></ol>
+      </div>
       <button id="again" class="btn">JOGAR DE NOVO</button>
       <a id="share" class="btn wa" href="#" target="_blank" rel="noopener">DESAFIAR NO WHATSAPP</a>
     </div>
@@ -100,6 +127,8 @@ canvas#c{display:block;touch-action:none;background:#2563c9}
 /* ================= CONFIG ================= */
 // Link final do jogo (ex.: https://riverattack.vercel.app). Vazio = usa o endereço atual.
 const GAME_URL = '';
+// Ranking online (n8n). Vazio = jogo funciona normal, sem ranking.
+const RANKING_BASE = 'https://painelalemo.infinityai.com.br/webhook';
 
 const W = 360, H = 640;      // tamanho lógico da tela
 const RH = 8;                // altura de cada "fatia" do rio
@@ -540,7 +569,86 @@ function gameOver() {
   const msg = 'Fiz ' + score + ' pontos no RIVER ATTACK! 🛩️ Consegue me superar?\n' + base;
   shareEl.href = 'https://wa.me/?text=' + encodeURIComponent(msg);
   overEl.classList.remove('hidden');
+  initRanking();
 }
+
+/* ================= RANKING ONLINE (n8n) ================= */
+const rankBox = $('rankBox'), saveRow = $('saveRow'), nameIn = $('nameIn'), saveBtn = $('saveBtn');
+const rankMsg = $('rankMsg'), boardEl = $('board');
+let rankGen = 0, lastScore = 0, lastLevel = 1;
+
+function rankFetch(path, opts) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 8000);
+  const o = Object.assign({ signal: ctl.signal, credentials: 'omit' }, opts || {});
+  return fetch(RANKING_BASE + path, o)
+    .then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+    .finally(() => clearTimeout(timer));
+}
+
+function cleanName(s) {
+  return String(s || '').replace(/[^A-Za-z0-9 _.\-À-ſ]/g, '').trim().slice(0, 12);
+}
+
+function renderBoard(list, me) {
+  boardEl.textContent = '';
+  const mine = String(me || '').toLowerCase();
+  (Array.isArray(list) ? list : []).slice(0, 10).forEach((r, i) => {
+    const li = document.createElement('li');
+    if (mine && String(r.nome).toLowerCase() === mine) li.className = 'me';
+    const a = document.createElement('span'); a.className = 'pos'; a.textContent = (i + 1) + '.';
+    const b = document.createElement('span'); b.className = 'nm'; b.textContent = String(r.nome);
+    const c = document.createElement('span'); c.className = 'pt'; c.textContent = String(r.pontos);
+    li.appendChild(a); li.appendChild(b); li.appendChild(c);
+    boardEl.appendChild(li);
+  });
+}
+
+function initRanking() {
+  rankGen++;
+  if (!RANKING_BASE) return;
+  const gen = rankGen;
+  lastScore = score; lastLevel = level + 1;
+  rankBox.classList.add('hidden');
+  boardEl.textContent = '';
+  rankMsg.textContent = '';
+  let saved = ''; try { saved = localStorage.getItem('ra_name') || ''; } catch (e) {}
+  nameIn.value = cleanName(saved);
+  saveBtn.disabled = false;
+  saveRow.classList.toggle('hidden', lastScore < 1);
+  rankFetch('/riverattack-ranking')
+    .then(d => {
+      if (gen !== rankGen || state !== 'over') return;
+      renderBoard(d && d.ranking, nameIn.value);
+      rankBox.classList.remove('hidden');
+    })
+    .catch(() => { /* sem ranking: o jogo segue normal */ });
+}
+
+function saveRanking() {
+  const nome = cleanName(nameIn.value);
+  if (nome.length < 2) { rankMsg.textContent = 'Digite um nome com 2+ letras'; return; }
+  try { localStorage.setItem('ra_name', nome); } catch (e) {}
+  const gen = rankGen;
+  saveBtn.disabled = true; rankMsg.textContent = 'Salvando...';
+  rankFetch('/riverattack-score', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nome: nome, pontos: lastScore, fase: lastLevel })
+  }).then(d => {
+    if (gen !== rankGen) return;
+    renderBoard(d && d.ranking, nome);
+    saveRow.classList.add('hidden');
+    rankMsg.textContent = 'Pontuação salva!';
+  }).catch(() => {
+    if (gen !== rankGen) return;
+    saveBtn.disabled = false;
+    rankMsg.textContent = 'Sem conexão. Tente de novo';
+  });
+}
+saveBtn.addEventListener('click', saveRanking);
+nameIn.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') saveRanking(); });
+nameIn.addEventListener('keyup', e => e.stopPropagation());
 
 function crash(why, force) {
   if (!player.alive || (invuln > 0 && !force)) return;
